@@ -24,7 +24,7 @@ from src.dataset import ASLManifestDataset, collate_asl_batch
 from src.engine import evaluate, train_one_epoch
 from src.losses import JointCTCCrossEntropyLoss
 from src.model import SignLanguageTransformer
-from src.utils import WarmupInverseSqrtLR, resolve_device, save_checkpoint, set_seed
+from src.utils import WarmupInverseSqrtLR, load_checkpoint, resolve_device, save_checkpoint, set_seed
 from src.vocab import build_or_load_vocabs
 
 
@@ -72,7 +72,8 @@ def main() -> None:
 
     train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab)
     val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab)
-
+    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab)
+        
     train_loader = DataLoader(
         train_set,
         batch_size=cfg["train"]["batch_size"],
@@ -84,6 +85,15 @@ def main() -> None:
     )
     val_loader = DataLoader(
         val_set,
+        batch_size=cfg["train"]["batch_size"],
+        shuffle=False,
+        num_workers=cfg["data"]["num_workers"],
+        pin_memory=cfg["data"]["pin_memory"],
+        collate_fn=collate_fn,
+    )
+    
+    test_loader = DataLoader(
+        test_set,
         batch_size=cfg["train"]["batch_size"],
         shuffle=False,
         num_workers=cfg["data"]["num_workers"],
@@ -139,16 +149,24 @@ def main() -> None:
         if epoch % cfg["train"]["eval_every_epochs"] == 0:
             val_metrics = evaluate(
                 model, val_loader, criterion, device, gloss_vocab, word_vocab,
-                cfg["model"]["max_decoder_len"],
+                cfg["model"]["max_decoder_len"], split="val",
             )
             print(f"[epoch {epoch}] val: {val_metrics}")
+            
+            test_metrics = evaluate(
+                model, test_loader, criterion, device, gloss_vocab, word_vocab,
+                cfg["model"]["max_decoder_len"], split="test",
+            )
+            print(f"[epoch {epoch}] test: {test_metrics}")
 
             metric_value = val_metrics[cfg["train"]["best_metric"]]
-            save_checkpoint(ckpt_dir / "last.pt", model, optimizer, epoch, {"val_metrics": val_metrics})
+            save_checkpoint(ckpt_dir / "last.pt", model, optimizer, epoch,
+                             {"val_metrics": val_metrics, "test_metrics": test_metrics})
             if metric_value < best_metric_value:
                 best_metric_value = metric_value
                 epochs_without_improvement = 0
-                save_checkpoint(ckpt_dir / "best.pt", model, optimizer, epoch, {"val_metrics": val_metrics})
+                save_checkpoint(ckpt_dir / "best.pt", model, optimizer, epoch,
+                                 {"val_metrics": val_metrics, "test_metrics": test_metrics})
                 print(f"[epoch {epoch}] new best {cfg['train']['best_metric']}={metric_value:.4f}, checkpoint saved.")
             else:
                 epochs_without_improvement += cfg["train"]["eval_every_epochs"]
@@ -159,6 +177,21 @@ def main() -> None:
                 break
 
     print("[info] training complete.")
+    
+    best_ckpt_path = ckpt_dir / "best.pt"
+    if best_ckpt_path.is_file():
+        load_checkpoint(best_ckpt_path, model)
+        print(f"[info] loaded best checkpoint from {best_ckpt_path} for final test evaluation.")
+    else:
+        print("[warn] no best.pt found, evaluating the final in-memory model weights instead.")
+
+    final_test_metrics = evaluate(
+        model, test_loader, criterion, device, gloss_vocab, word_vocab,
+        cfg["model"]["max_decoder_len"], split="test",
+    )
+    print("[info] ===== FINAL TEST RESULTS (best checkpoint) =====")
+    for key, value in final_test_metrics.items():
+        print(f"[final test] {key}: {value:.4f}")
 
 
 if __name__ == "__main__":

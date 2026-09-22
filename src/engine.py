@@ -6,8 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .losses import JointCTCCrossEntropyLoss
-from .metrics import ctc_greedy_decode_ids, word_error_rate
-from .model import SignLanguageTransformer
+from .metrics import ctc_greedy_decode_ids, sentence_accuracy, word_error_rate, word_level_accuracyfrom .model import SignLanguageTransformer
 from .vocab import Vocabulary
 
 
@@ -95,6 +94,7 @@ def evaluate(
     gloss_vocab: Vocabulary,
     word_vocab: Vocabulary,
     max_decode_len: int,
+    split: str = "val",
 ) -> dict[str, float]:
     model.eval()
     running = {"loss": 0.0, "loss_ctc": 0.0, "loss_ce": 0.0}
@@ -143,8 +143,20 @@ def evaluate(
             word_hyps.append(word_vocab.decode(row[1:], stop_at_eos=True))  # drop <bos>
         for row in batch["word_ids"].tolist():
             word_refs.append(word_vocab.decode(row[1:], stop_at_eos=True))  # drop <bos>, stop at <eos>
-
     metrics = {key: value / max(num_batches, 1) for key, value in running.items()}
-    metrics["val_gloss_wer"] = word_error_rate(gloss_refs, gloss_hyps)
-    metrics["val_wer"] = word_error_rate(word_refs, word_hyps)
+
+    # --- gloss (CTC) metrics: word-level و sentence-level ---
+    metrics[f"{split}_gloss_wer"] = word_error_rate(gloss_refs, gloss_hyps)
+    metrics[f"{split}_gloss_word_acc"] = word_level_accuracy(gloss_refs, gloss_hyps)
+    metrics[f"{split}_gloss_sentence_acc"] = sentence_accuracy(gloss_refs, gloss_hyps)
+
+    # --- decoder (spoken order) metrics: word-level و sentence-level ---
+    metrics[f"{split}_wer"] = word_error_rate(word_refs, word_hyps)
+    metrics[f"{split}_word_acc"] = word_level_accuracy(word_refs, word_hyps)
+    metrics[f"{split}_sentence_acc"] = sentence_accuracy(word_refs, word_hyps)
+
     return metrics
+    # metrics = {key: value / max(num_batches, 1) for key, value in running.items()}
+    # metrics["val_gloss_wer"] = word_error_rate(gloss_refs, gloss_hyps)
+    # metrics["val_wer"] = word_error_rate(word_refs, word_hyps)
+    # return metrics

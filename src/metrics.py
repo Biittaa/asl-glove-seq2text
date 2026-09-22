@@ -47,3 +47,15 @@ def ctc_greedy_decode_ids(log_probs: torch.Tensor, lengths: torch.Tensor, blank_
             prev = token
         results.append(collapsed)
     return results
+
+
+
+def word_level_accuracy(references: list[list[str]], hypotheses: list[list[str]]) -> float:
+    return 1.0 - word_error_rate(references, hypotheses)
+
+
+def sentence_accuracy(references: list[list[str]], hypotheses: list[list[str]]) -> float:
+    if not references:
+        return 0.0
+    correct = sum(1 for ref, hyp in zip(references, hypotheses) if ref == hyp)
+    return correct / len(references)
