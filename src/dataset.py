@@ -1,13 +1,5 @@
 """Dataset for the ASL Perception Neuron sensor-to-text package.
-
-Every recording is a variable-length multivariate time series (one CSV per
-recording, ``timestamp`` + 38 rotation features) plus two text labels:
-  - ``label_no_order`` (gesture/ASL order)  -> CTC target, tokenized as glosses
-  - ``label_order``    (spoken English order) -> decoder target, tokenized as words
-
-Both sequence length (number of frames) AND label length are variable across
-the dataset, so batching requires padding + explicit length/mask bookkeeping,
-handled here in ``collate_asl_batch``.
+...
 """
 
 from __future__ import annotations
@@ -21,8 +13,8 @@ import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
-from .vocab import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, Vocabulary
 from .normalization import compute_feature_stats, load_stats, save_stats
+from .vocab import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, Vocabulary
 
 
 class ASLManifestDataset(torch.utils.data.Dataset):
@@ -49,16 +41,19 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         with open(metadata_path, "r", encoding="utf-8") as f:
             self.metadata = json.load(f)
         self.feature_columns: list[str] = list(self.metadata["feature_columns"])
+
+        # --- feature normalization stats (built once from train, cached) ---
         stats_path = self.dataset_root / "artifacts" / "feature_stats.json"
         if stats_path.is_file():
             self.feat_mean, self.feat_std = load_stats(stats_path)
         else:
-            stats = compute_feature_stats(dataset_root, "train", self.feature_columns)
+            stats = compute_feature_stats(self.dataset_root, "train", self.feature_columns)
             save_stats(stats, stats_path)
             self.feat_mean = np.array(stats["mean"], dtype=np.float32)
             self.feat_std = np.array(stats["std"], dtype=np.float32)
-            def __len__(self) -> int:
-                return len(self.records)
+
+    def __len__(self) -> int:
+        return len(self.records)
 
     def _load_sequence(self, relative_path: str) -> np.ndarray:
         sequence_path = self.dataset_root / relative_path
@@ -100,15 +95,11 @@ def collate_asl_batch(batch: list[dict[str, Any]], word_pad_id: int) -> dict[str
     max_frames = int(frame_lengths.max().item())
 
     features = pad_sequence([item["features"] for item in batch], batch_first=True)  # (B, Tmax, 38)
-    # True where a frame is PADDING (used as Transformer key_padding_mask).
     src_key_padding_mask = torch.arange(max_frames)[None, :] >= frame_lengths[:, None]
 
-    # CTC targets: concatenated 1D tensor + per-sample lengths (no padding
-    # needed for torch.nn.CTCLoss when using this format).
     gloss_lengths = torch.tensor([item["gloss_ids"].shape[0] for item in batch], dtype=torch.long)
     gloss_targets_concat = torch.cat([item["gloss_ids"] for item in batch])
 
-    # Decoder targets: padded 2D tensor (already contain <bos>/<eos>).
     word_ids_padded = pad_sequence(
         [item["word_ids"] for item in batch], batch_first=True, padding_value=word_pad_id
     )  # (B, Lmax)
