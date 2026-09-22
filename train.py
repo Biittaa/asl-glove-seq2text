@@ -28,6 +28,9 @@ from src.utils import WarmupInverseSqrtLR, load_checkpoint, resolve_device, save
 from src.vocab import build_or_load_vocabs
 
 
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/config.yaml")

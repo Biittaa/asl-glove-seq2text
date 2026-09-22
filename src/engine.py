@@ -134,7 +134,14 @@ def evaluate(
             ref_ids = batch["gloss_targets_concat"][offset: offset + length].tolist()
             gloss_refs.append(gloss_vocab.decode(ref_ids))
             offset += length
+        if num_batches == 1:
+            print(f"\n[CTC DEBUG - {split}] blank_id = {blank_id}")
 
+        for i in range(min(4, len(gloss_hyp_ids))):
+            print(f"  sample {i}:")
+            print(f"    REF : {gloss_refs[-len(gloss_hyp_ids) + i]}")
+            print(f"    PRED: {gloss_vocab.decode(gloss_hyp_ids[i])}")
+            print(f"    IDS : {gloss_hyp_ids[i]}")
         # --- Decoder (spoken order) greedy decode ---
         generated = model.greedy_decode(
             batch["features"], batch["src_key_padding_mask"], bos_id, eos_id, max_decode_len,
