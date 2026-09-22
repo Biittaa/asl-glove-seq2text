@@ -1,0 +1,91 @@
+# ============================================================================
+# Configuration for the ASL sensor-to-text Transformer (no CNN/GRU sign
+# embedding; the model starts directly at the Transformer encoder, as
+# requested). Edit the paths below to match your Google Drive layout before
+# running train.py (or override them from the CLI / from the Colab notebook).
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  # Root of the *unzipped* dataset folder as produced by the packaging step,
+  # i.e. the folder that directly contains: data/, manifests/, metadata.json
+  # Example (Colab, folder uploaded as-is to Drive, not as a zip):
+  #   /content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset
+  dataset_root: "/content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset"
+
+  train_split: "train"
+  val_split: "validation"
+  test_split: "test"
+
+  # Which label field is used for each loss (see README for details):
+  #   - CTC loss is computed on the *gesture-order* label (no fixed word order)
+  #   - Cross-entropy loss is computed on the *spoken-order* label
+  ctc_label_field: "label_no_order"
+  ce_label_field: "label_order"
+
+  num_workers: 2
+  pin_memory: true
+
+# ---------------------------------------------------------------------------
+# Vocabulary
+# ---------------------------------------------------------------------------
+vocab:
+  # Vocabularies are always built from the TRAIN split only (no leakage from
+  # val/test) and then cached to disk so every run/inference uses the same
+  # token <-> id mapping.
+  out_dir: "artifacts/vocab"
+  gloss_vocab_file: "gloss_vocab.json"   # CTC target vocabulary (words as classes)
+  word_vocab_file: "word_vocab.json"     # Decoder target/source vocabulary
+
+# ---------------------------------------------------------------------------
+# Model
+# ---------------------------------------------------------------------------
+model:
+  # Raw per-frame feature dimensionality (from metadata.json: feature_count)
+  input_feature_dim: 38
+
+  d_model: 256
+  nhead: 8
+  dim_feedforward: 1024
+  dropout: 0.1
+
+  encoder_layers: 4
+  decoder_layers: 4
+
+  max_encoder_len: 1024     # >= dataset "maximum_frames" (831), with margin
+  max_decoder_len: 64       # >= longest word_order sentence + <bos>/<eos>
+
+# ---------------------------------------------------------------------------
+# Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
+# ---------------------------------------------------------------------------
+loss:
+  lambda_ctc: 0.3
+  lambda_ce: 0.7
+  label_smoothing: 0.1   # applied only to the cross-entropy (decoder) loss
+
+# ---------------------------------------------------------------------------
+# Optimization
+# ---------------------------------------------------------------------------
+train:
+  epochs: 100
+  batch_size: 16
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  warmup_steps: 1000
+  grad_clip_norm: 5.0
+  amp: true                 # mixed precision (recommended on Colab GPU)
+  seed: 42
+
+  log_every: 50
+  eval_every_epochs: 1
+  ckpt_dir: "artifacts/checkpoints"
+  best_metric: "val_wer"    # lower is better; tracked on the decoder output
+  early_stop_patience: 15   # epochs without improvement, 0 = disabled
+
+# ---------------------------------------------------------------------------
+# Misc
+# ---------------------------------------------------------------------------
+runtime:
+  device: "cuda"   # falls back to "cpu" automatically if CUDA unavailable
