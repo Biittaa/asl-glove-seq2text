@@ -6,7 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from .losses import JointCTCCrossEntropyLoss
-from .metrics import ctc_greedy_decode_ids, sentence_accuracy, word_error_rate, word_level_accuracyfrom .model import SignLanguageTransformer
+from .metrics import ctc_greedy_decode_ids, sentence_accuracy, word_error_rate, word_level_accuracy
+from .model import SignLanguageTransformer
 from .vocab import Vocabulary
 
 
