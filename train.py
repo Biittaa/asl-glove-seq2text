@@ -104,6 +104,10 @@ def main() -> None:
         dropout=cfg["model"]["dropout"],
         max_encoder_len=cfg["model"]["max_encoder_len"],
         max_decoder_len=cfg["model"]["max_decoder_len"],
+        use_conv_subsampling=cfg["model"].get("use_conv_subsampling", True),
+        conv_kernel_size=cfg["model"].get("conv_kernel_size", 5),
+        conv_stride=cfg["model"].get("conv_stride", 2),
+        conv_num_layers=cfg["model"].get("conv_num_layers", 2),
     ).to(device)
 
     criterion = JointCTCCrossEntropyLoss(

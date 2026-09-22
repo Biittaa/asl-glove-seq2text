@@ -57,6 +57,17 @@ model:
   max_encoder_len: 1024     # >= dataset "maximum_frames" (831), with margin
   max_decoder_len: 64       # >= longest word_order sentence + <bos>/<eos>
 
+  # CNN front-end that downsamples the frame axis before the Transformer
+  # encoder, to cut self-attention's O(T^2) cost. conv_num_layers stride-2
+  # conv layers together shrink T by conv_stride**conv_num_layers (4x by
+  # default), so attention cost drops by roughly that squared (~16x).
+  # Set use_conv_subsampling: false to restore the old no-CNN behaviour
+  # (a single linear projection, T unchanged).
+  use_conv_subsampling: true
+  conv_kernel_size: 5
+  conv_stride: 2
+  conv_num_layers: 2
+
 # ---------------------------------------------------------------------------
 # Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
 # ---------------------------------------------------------------------------

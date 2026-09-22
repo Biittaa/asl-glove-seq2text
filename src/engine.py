@@ -40,10 +40,16 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
 
         with torch.autocast(device_type=device.type, enabled=scaler is not None):
-            out = model(batch["features"], batch["src_key_padding_mask"], batch["word_ids"])
+            out = model(
+                batch["features"], batch["src_key_padding_mask"], batch["word_ids"], batch["frame_lengths"]
+            )
             losses = criterion(
                 ctc_log_probs=out["ctc_log_probs"],
-                frame_lengths=batch["frame_lengths"],
+                # Use the encoder's own (possibly subsampled) per-sample
+                # lengths here, NOT batch["frame_lengths"]: ctc_log_probs has
+                # T' frames (T' == T only when conv subsampling is off), and
+                # nn.CTCLoss requires input_lengths to match that axis.
+                frame_lengths=out["encoder_frame_lengths"],
                 gloss_targets_concat=batch["gloss_targets_concat"],
                 gloss_lengths=batch["gloss_lengths"],
                 decoder_logits=out["decoder_logits"],
@@ -103,10 +109,13 @@ def evaluate(
 
     for batch in loader:
         batch = move_batch_to_device(batch, device)
-        out = model(batch["features"], batch["src_key_padding_mask"], batch["word_ids"])
+        out = model(
+            batch["features"], batch["src_key_padding_mask"], batch["word_ids"], batch["frame_lengths"]
+        )
         losses = criterion(
             ctc_log_probs=out["ctc_log_probs"],
-            frame_lengths=batch["frame_lengths"],
+            # Same reasoning as in train_one_epoch: match ctc_log_probs' T'.
+            frame_lengths=out["encoder_frame_lengths"],
             gloss_targets_concat=batch["gloss_targets_concat"],
             gloss_lengths=batch["gloss_lengths"],
             decoder_logits=out["decoder_logits"],
@@ -117,7 +126,7 @@ def evaluate(
         num_batches += 1
 
         # --- CTC (gloss) greedy decode for reference/monitoring ---
-        gloss_hyp_ids = ctc_greedy_decode_ids(out["ctc_log_probs"], batch["frame_lengths"], blank_id)
+        gloss_hyp_ids = ctc_greedy_decode_ids(out["ctc_log_probs"], out["encoder_frame_lengths"], blank_id)
         gloss_hyps.extend([gloss_vocab.decode(ids) for ids in gloss_hyp_ids])
         offset = 0
         for length in batch["gloss_lengths"].tolist():
@@ -127,7 +136,8 @@ def evaluate(
 
         # --- Decoder (spoken order) greedy decode ---
         generated = model.greedy_decode(
-            batch["features"], batch["src_key_padding_mask"], bos_id, eos_id, max_decode_len
+            batch["features"], batch["src_key_padding_mask"], bos_id, eos_id, max_decode_len,
+            frame_lengths=batch["frame_lengths"],
         )
         for row in generated.tolist():
             word_hyps.append(word_vocab.decode(row[1:], stop_at_eos=True))  # drop <bos>

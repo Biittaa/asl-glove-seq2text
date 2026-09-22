@@ -67,16 +67,22 @@ def main() -> None:
         dropout=cfg["model"]["dropout"],
         max_encoder_len=cfg["model"]["max_encoder_len"],
         max_decoder_len=cfg["model"]["max_decoder_len"],
+        use_conv_subsampling=cfg["model"].get("use_conv_subsampling", True),
+        conv_kernel_size=cfg["model"].get("conv_kernel_size", 5),
+        conv_stride=cfg["model"].get("conv_stride", 2),
+        conv_num_layers=cfg["model"].get("conv_num_layers", 2),
     ).to(device)
     load_checkpoint(args.checkpoint, model, map_location=device.type)
     model.eval()
 
     features = load_sequence(args.csv_path, feature_columns).unsqueeze(0).to(device)  # (1, T, 38)
     src_key_padding_mask = torch.zeros(1, features.size(1), dtype=torch.bool, device=device)
+    frame_lengths = torch.tensor([features.size(1)], dtype=torch.long, device=device)
 
     bos_id, eos_id = word_vocab.stoi["<bos>"], word_vocab.stoi["<eos>"]
     generated = model.greedy_decode(
-        features, src_key_padding_mask, bos_id, eos_id, cfg["model"]["max_decoder_len"]
+        features, src_key_padding_mask, bos_id, eos_id, cfg["model"]["max_decoder_len"],
+        frame_lengths=frame_lengths,
     )
     words = word_vocab.decode(generated[0, 1:].tolist(), stop_at_eos=True)
     print("Predicted spoken-order sentence:", " ".join(words))
