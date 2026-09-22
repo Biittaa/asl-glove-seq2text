@@ -49,7 +49,7 @@ model:
   d_model: 256
   nhead: 4
   dim_feedforward: 1024
-  dropout: 0.5
+  dropout: 0.1
 
   encoder_layers: 4
   decoder_layers: 4
@@ -72,8 +72,8 @@ model:
 # Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
 # ---------------------------------------------------------------------------
 loss:
-  lambda_ctc: 0.3
-  lambda_ce: 0.7
+  lambda_ctc: 0.5
+  lambda_ce: 0.5
   label_smoothing: 0.1   # applied only to the cross-entropy (decoder) loss
 
 # ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ train:
   batch_size: 16
   lr: 3.0e-4
   weight_decay: 1.0e-4
-  warmup_steps: 1000
+  warmup_steps: 200
   grad_clip_norm: 5.0
   amp: true                 # mixed precision (recommended on Colab GPU)
   seed: 42
