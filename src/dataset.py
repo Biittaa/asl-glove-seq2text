@@ -22,6 +22,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 from .vocab import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, Vocabulary
+from .normalization import compute_feature_stats, load_stats, save_stats
 
 
 class ASLManifestDataset(torch.utils.data.Dataset):
@@ -48,9 +49,16 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         with open(metadata_path, "r", encoding="utf-8") as f:
             self.metadata = json.load(f)
         self.feature_columns: list[str] = list(self.metadata["feature_columns"])
-
-    def __len__(self) -> int:
-        return len(self.records)
+        stats_path = self.dataset_root / "artifacts" / "feature_stats.json"
+        if stats_path.is_file():
+            self.feat_mean, self.feat_std = load_stats(stats_path)
+        else:
+            stats = compute_feature_stats(dataset_root, "train", self.feature_columns)
+            save_stats(stats, stats_path)
+            self.feat_mean = np.array(stats["mean"], dtype=np.float32)
+            self.feat_std = np.array(stats["std"], dtype=np.float32)
+            def __len__(self) -> int:
+                return len(self.records)
 
     def _load_sequence(self, relative_path: str) -> np.ndarray:
         sequence_path = self.dataset_root / relative_path
@@ -62,7 +70,9 @@ class ASLManifestDataset(torch.utils.data.Dataset):
                 raise ValueError(f"Unexpected columns in {sequence_path}")
             for row in reader:
                 rows.append([float(row[name]) for name in self.feature_columns])
-        return np.asarray(rows, dtype=np.float32)
+        arr = np.asarray(rows, dtype=np.float32)
+        arr = (arr - self.feat_mean) / self.feat_std
+        return arr
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         record = self.records[index]
