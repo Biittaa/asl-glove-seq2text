@@ -18,6 +18,18 @@ data:
   train_split: "train"
   val_split: "validation"
   test_split: "test"
+  split:
+    mode: "random"   # "subject" | "random" | "compositional"
+    all_manifest: "manifests/all.jsonl"
+    random_seed: 42
+    random_ratios:                    
+      train: 0.8108
+      validation: 0.1351
+      test: 0.0541
+    compositional:                    
+      unseen_sentence_fraction: 0.15  
+      train_recording_ratio: 0.85   
+      seed: 42
 
   # Which label field is used for each loss (see README for details):
   #   - CTC loss is computed on the *gesture-order* label (no fixed word order)
