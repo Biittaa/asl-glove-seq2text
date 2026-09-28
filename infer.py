@@ -45,9 +45,11 @@ def main() -> None:
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     device = resolve_device(cfg["runtime"]["device"])
-
-    gloss_vocab = Vocabulary.from_json(f"{cfg['vocab']['out_dir']}/{cfg['vocab']['gloss_vocab_file']}")
-    word_vocab = Vocabulary.from_json(f"{cfg['vocab']['out_dir']}/{cfg['vocab']['word_vocab_file']}")
+    mode = cfg["data"]["split"]["mode"]
+    
+    gloss_vocab = Vocabulary.from_json(f"{cfg['vocab']['out_dir']}/{mode}/{cfg['vocab']['gloss_vocab_file']}")
+    word_vocab = Vocabulary.from_json(f"{cfg['vocab']['out_dir']}/{mode}/{cfg['vocab']['word_vocab_file']}")
+    
     word_pad_id = word_vocab.stoi["<pad>"]
 
     with open(f"{cfg['data']['dataset_root']}/metadata.json", "r", encoding="utf-8") as f:

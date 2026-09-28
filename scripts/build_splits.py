@@ -289,7 +289,7 @@ def main() -> None:
         raise ValueError(f"Unknown split mode: {split_mode}")
 
     for name, key in (("train", "train"), ("validation", "validation"), ("test", "test")):
-        out_path = dataset_root / "manifests" / f"{name}.jsonl"
+        out_path = dataset_root / "manifests" / split_mode/ f"{name}.jsonl"
         write_manifest(splits[key], out_path)
         print(f"[info] wrote {len(splits[key])} records -> {out_path}")
 

@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset_root", type=str, default=None, help="Override data.dataset_root")
     parser.add_argument("--epochs", type=int, default=None, help="Override train.epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override train.batch_size")
+    parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional"], help="Override data.split.mode")
     return parser.parse_args()
 
 
@@ -49,6 +50,11 @@ def load_config(path: str, args: argparse.Namespace) -> dict:
         cfg["train"]["epochs"] = args.epochs
     if args.batch_size:
         cfg["train"]["batch_size"] = args.batch_size
+    if args.split_mode:
+        cfg["data"]["split"]["mode"] = args.split_mode
+    mode = cfg["data"]["split"]["mode"]
+    cfg["vocab"]["out_dir"] = f"{cfg['vocab']['out_dir']}/{mode}"
+    cfg["train"]["ckpt_dir"] = f"{cfg['train']['ckpt_dir']}/{mode}"
     return cfg
 
 
@@ -60,9 +66,10 @@ def main() -> None:
     print(f"[info] using device: {device}")
 
     dataset_root = cfg["data"]["dataset_root"]
+    mode = cfg["data"]["split"]["mode"]
     gloss_vocab, word_vocab = build_or_load_vocabs(
         dataset_root=dataset_root,
-        train_split=cfg["data"]["train_split"],
+        train_split=f"{mode}/{cfg['data']['train_split']}",
         out_dir=cfg["vocab"]["out_dir"],
         gloss_vocab_file=cfg["vocab"]["gloss_vocab_file"],
         word_vocab_file=cfg["vocab"]["word_vocab_file"],
@@ -73,10 +80,10 @@ def main() -> None:
     word_pad_id = word_vocab.stoi["<pad>"]
     collate_fn = partial(collate_asl_batch, word_pad_id=word_pad_id)
 
-    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab)
-    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab)
-    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab)
-        
+    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab, mode)
+    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab, mode)
+    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab, mode)
+    
     train_loader = DataLoader(
         train_set,
         batch_size=cfg["train"]["batch_size"],

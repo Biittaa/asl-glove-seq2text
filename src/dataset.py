@@ -26,12 +26,13 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         split: str,
         gloss_vocab: Vocabulary,
         word_vocab: Vocabulary,
+        manifest_subdir: str,
     ) -> None:
         self.dataset_root = Path(dataset_root)
         self.gloss_vocab = gloss_vocab
         self.word_vocab = word_vocab
 
-        manifest_path = self.dataset_root / "manifests" / f"{split}.jsonl"
+        manifest_path = self.dataset_root / "manifests" / manifest_subdir/ f"{split}.jsonl"
         if not manifest_path.is_file():
             raise FileNotFoundError(f"Manifest not found: {manifest_path}")
         with open(manifest_path, "r", encoding="utf-8") as f:
@@ -43,11 +44,11 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         self.feature_columns: list[str] = list(self.metadata["feature_columns"])
 
         # --- feature normalization stats (built once from train, cached) ---
-        stats_path = self.dataset_root / "artifacts" / "feature_stats.json"
+        stats_path = self.dataset_root / "artifacts" / manifest_subdir / "feature_stats.json"
         if stats_path.is_file():
             self.feat_mean, self.feat_std = load_stats(stats_path)
         else:
-            stats = compute_feature_stats(self.dataset_root, "train", self.feature_columns)
+            stats = compute_feature_stats(self.dataset_root, f"{manifest_subdir}/train", self.feature_columns)
             save_stats(stats, stats_path)
             self.feat_mean = np.array(stats["mean"], dtype=np.float32)
             self.feat_std = np.array(stats["std"], dtype=np.float32)
