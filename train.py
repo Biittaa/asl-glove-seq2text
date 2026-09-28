@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override train.epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override train.batch_size")
     parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional"], help="Override data.split.mode")
+    parser.add_argument("--resume", action="store_true", help="Resume from last.pt in ckpt_dir")
     return parser.parse_args()
 
 
@@ -149,7 +150,21 @@ def main() -> None:
     best_metric_value = float("inf")
     epochs_without_improvement = 0
 
-    for epoch in range(1, cfg["train"]["epochs"] + 1):
+    start_epoch = 1
+    last_path = ckpt_dir / "last.pt"
+    if args.resume and last_path.is_file():
+        ckpt = load_checkpoint(last_path, model, optimizer, map_location=device.type)
+        start_epoch = ckpt["epoch"] + 1
+        scheduler.step_num = ckpt["epoch"] * len(train_loader)
+        best_path = ckpt_dir / "best.pt"
+        if best_path.is_file():
+            best_ckpt = torch.load(best_path, map_location="cpu")
+            best_metric_value = best_ckpt["val_metrics"][cfg["train"]["best_metric"]]
+        print(f"[info] resumed from epoch {ckpt['epoch']}, continuing at {start_epoch}")
+        
+
+    
+    for epoch in range(start_epoch, cfg["train"]["epochs"] + 1):
         train_metrics = train_one_epoch(
             model, train_loader, optimizer, scheduler, criterion, device,
             cfg["train"]["grad_clip_norm"], scaler, cfg["train"]["log_every"], epoch,
