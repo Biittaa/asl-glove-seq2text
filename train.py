@@ -129,6 +129,12 @@ def main() -> None:
         conv_kernel_size=cfg["model"].get("conv_kernel_size", 5),
         conv_stride=cfg["model"].get("conv_stride", 2),
         conv_num_layers=cfg["model"].get("conv_num_layers", 2),
+        two_hand=cfg["model"].get("two_hand", False),
+        hand_feature_dim=cfg["model"].get("hand_feature_dim", 19),
+        hand_d_model=cfg["model"].get("hand_d_model", 128),
+        fusion=cfg["model"].get("fusion", "concat"),
+        fusion_nhead=cfg["model"].get("fusion_nhead", 4),
+        hand_encoder_layers=cfg["model"].get("hand_encoder_layers", 0),
     ).to(device)
 
     criterion = JointCTCCrossEntropyLoss(

@@ -175,10 +175,30 @@ class TransformerEncoderCTC(nn.Module):
         conv_kernel_size: int = 5,
         conv_stride: int = 2,
         conv_num_layers: int = 2,
+        two_hand: bool = False,
+        hand_feature_dim: int = 19,
+        hand_d_model: int = 128,
+        fusion: str = "concat",
+        fusion_nhead: int = 4,
+        hand_encoder_layers: int = 0,
     ) -> None:
         super().__init__()
-        self.use_conv_subsampling = use_conv_subsampling
-        if use_conv_subsampling:
+        self.use_conv_subsampling = use_conv_subsampling or two_hand
+        if two_hand:
+            self.subsample = HandFusionFrontEnd(
+                hand_feature_dim=hand_feature_dim,
+                hand_d_model=hand_d_model,
+                d_model=d_model,
+                fusion=fusion,
+                nhead=fusion_nhead,
+                kernel_size=conv_kernel_size,
+                stride=conv_stride,
+                num_layers=conv_num_layers,
+                dropout=dropout,
+                hand_layers=hand_encoder_layers,
+                max_len=max_len,
+            )
+        elif use_conv_subsampling:
             self.subsample = ConvSubsampling(
                 input_feature_dim,
                 d_model,
@@ -305,6 +325,12 @@ class SignLanguageTransformer(nn.Module):
         conv_kernel_size: int = 5,
         conv_stride: int = 2,
         conv_num_layers: int = 2,
+        two_hand=two_hand,
+        hand_feature_dim=hand_feature_dim,
+        hand_d_model=hand_d_model,
+        fusion=fusion,
+        fusion_nhead=fusion_nhead,
+        hand_encoder_layers=hand_encoder_layers,
     ) -> None:
         super().__init__()
         self.encoder = TransformerEncoderCTC(
@@ -407,3 +433,52 @@ class SignLanguageTransformer(nn.Module):
                 break
 
         return generated  # (B, <=max_len), includes <bos> and (if reached) <eos>
+
+
+class HandFusionFrontEnd(nn.Module):
+
+    def __init__(self, hand_feature_dim, hand_d_model, d_model, fusion,
+                 nhead, kernel_size, stride, num_layers, dropout, hand_layers=0, max_len=1024):
+        super().__init__()
+        if fusion not in ("concat", "cross_attention"):
+            raise ValueError(f"Unknown fusion: {fusion}")
+        self.hand_dim = hand_feature_dim
+        self.fusion = fusion
+
+        def make():
+            return ConvSubsampling(hand_feature_dim, hand_d_model,
+                                   kernel_size, stride, num_layers, dropout)
+        self.right, self.left = make(), make()
+
+        if fusion == "cross_attention":
+            self.attn_r = nn.MultiheadAttention(hand_d_model, nhead, dropout=dropout, batch_first=True)
+            self.attn_l = nn.MultiheadAttention(hand_d_model, nhead, dropout=dropout, batch_first=True)
+
+        
+        self.hand_layers = hand_layers
+        if hand_layers > 0:
+            def make_enc():
+                layer = nn.TransformerEncoderLayer(
+                    d_model=hand_d_model, nhead=nhead, dim_feedforward=hand_d_model * 2,
+                    dropout=dropout, batch_first=True, norm_first=True,
+                )
+                return nn.TransformerEncoder(layer, num_layers=hand_layers, enable_nested_tensor=False)
+            self.enc_r, self.enc_l = make_enc(), make_enc()
+            self.pe = PositionalEncoding(hand_d_model, dropout, max_len)
+        
+        self.out_proj = nn.Linear(2 * hand_d_model, d_model)
+        self.out_norm = nn.LayerNorm(d_model)
+
+    def forward(self, features, frame_lengths):
+        h = self.hand_dim
+        r, out_lengths, mask = self.right(features[..., :h], frame_lengths)   # (B, T', hd)
+        l, _, _ = self.left(features[..., h:], frame_lengths)                  # (B, T', hd)
+        if self.hand_layers > 0:
+            r = self.enc_r(self.pe(r), src_key_padding_mask=mask)
+            l = self.enc_l(self.pe(l), src_key_padding_mask=mask)
+        if self.fusion == "cross_attention":
+            r2, _ = self.attn_r(r, l, l, key_padding_mask=mask, need_weights=False)
+            l2, _ = self.attn_l(l, r, r, key_padding_mask=mask, need_weights=False)
+            r, l = r + r2, l + l2          # residual
+        x = self.out_norm(self.out_proj(torch.cat([r, l], dim=-1)))           # (B, T', d_model)
+        return x, out_lengths, mask

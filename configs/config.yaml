@@ -13,13 +13,13 @@ data:
   # i.e. the folder that directly contains: data/, manifests/, metadata.json
   # Example (Colab, folder uploaded as-is to Drive, not as a zip):
   #   /content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset
-  dataset_root: "/content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset"
+  dataset_root:  "/content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset"
 
   train_split: "train"
   val_split: "validation"
   test_split: "test"
   split:
-    mode: "random"   # "subject" | "random" | "compositional"
+    mode: "subject"   # "subject" | "random" | "compositional"
     all_manifest: "manifests/all.jsonl"
     random_seed: 42
     random_ratios:                    
@@ -30,6 +30,10 @@ data:
       unseen_sentence_fraction: 0.15  
       train_recording_ratio: 0.85   
       seed: 42
+    paper:
+      held_out_subject: "subject2"
+      val_fraction: 0.5
+      seed: 42
 
   # Which label field is used for each loss (see README for details):
   #   - CTC loss is computed on the *gesture-order* label (no fixed word order)
@@ -39,6 +43,8 @@ data:
 
   num_workers: 2
   pin_memory: true
+
+  norm_mode: "recording"
 
 # ---------------------------------------------------------------------------
 # Vocabulary
@@ -79,6 +85,13 @@ model:
   conv_kernel_size: 5
   conv_stride: 2
   conv_num_layers: 2
+
+  two_hand: true           
+  hand_feature_dim: 19      
+  hand_d_model: 128       
+  fusion: "concat"         
+  fusion_nhead: 4 
+  hand_encoder_layers: 0
 
 # ---------------------------------------------------------------------------
 # Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
