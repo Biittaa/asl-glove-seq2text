@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--split",
         type=str,
-        choices=["subject", "random", "compositional"],
+        choices=["subject", "random", "compositional", "paper"],
         default=None,
         help="Override data.split from the config file.",
     )
@@ -138,6 +138,59 @@ def build_random_split(
 def _label_tokens(record: dict) -> tuple[list[str], list[str]]:
     """Returns (decoder_words, gloss_words) for one recording's labels."""
     return record["label_order"].split(), record["label_no_order"].split()
+
+
+
+def build_paper_split(
+    records: list[dict],
+    held_out_subject: str,
+    val_fraction: float,
+    seed: int,
+) -> dict[str, list[dict]]:
+    """Paper-style user-independent split.
+
+    train      : every recording from all subjects EXCEPT `held_out_subject`.
+    val + test : recordings of `held_out_subject` only, split per sentence_id
+                 so both cover the same sentences. The model never sees
+                 this signer during training.
+    """
+    rng = random.Random(seed)
+
+    train = [r for r in records if r["subject"] != held_out_subject]
+    held = [r for r in records if r["subject"] == held_out_subject]
+    if not held:
+        raise ValueError(f"No records found for subject {held_out_subject!r}")
+
+    by_sentence: dict[int, list[dict]] = defaultdict(list)
+    for r in held:
+        by_sentence[r["sentence_id"]].append(r)
+
+    out: dict[str, list[dict]] = {"train": train, "validation": [], "test": []}
+    for sid, group in by_sentence.items():
+        group = list(group)
+        rng.shuffle(group)
+        n_val = round(len(group) * val_fraction)
+        out["validation"].extend(group[:n_val])
+        out["test"].extend(group[n_val:])
+
+    for key in out:
+        rng.shuffle(out[key])
+
+    # sanity checks: held-out signer must never leak into train
+    assert all(r["subject"] != held_out_subject for r in out["train"])
+    train_words = {w for r in out["train"] for w in r["label_order"].split()}
+    train_gloss = {g for r in out["train"] for g in r["label_no_order"].split()}
+    for split in ("validation", "test"):
+        for r in out[split]:
+            assert set(r["label_order"].split()) <= train_words, "word missing from train vocab"
+            assert set(r["label_no_order"].split()) <= train_gloss, "gloss missing from train vocab"
+
+    print(
+        f"[info] paper split: held-out={held_out_subject}; "
+        f"train={len(out['train'])}, val={len(out['validation'])}, test={len(out['test'])}"
+    )
+    return out
+
 
 
 def build_compositional_split(
@@ -285,6 +338,15 @@ def main() -> None:
             seed=seed,
         )
         print("[info] using COMPOSITIONAL split (test = entirely unseen sentences built from known words)")
+    elif split_mode == "paper":
+        p_cfg = split_cfg.get("paper", {})
+        splits = build_paper_split(
+            records,
+            held_out_subject=p_cfg.get("held_out_subject", "subject2"),
+            val_fraction=p_cfg.get("val_fraction", 0.5),
+            seed=p_cfg.get("seed", split_cfg.get("random_seed", 42)),
+        )
+        print("[info] using PAPER split (train = other subjects, val/test = held-out subject)")
     else:
         raise ValueError(f"Unknown split mode: {split_mode}")
 

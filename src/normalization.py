@@ -37,3 +37,15 @@ def load_stats(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     with open(path, encoding="utf-8") as f:
         d = json.load(f)
     return np.array(d["mean"], dtype=np.float32), np.array(d["std"], dtype=np.float32)
+
+
+
+
+def normalize_recording(arr: np.ndarray, mode: str, mean=None, std=None, eps: float = 1e-3) -> np.ndarray:
+    if mode == "recording":
+        m = arr.mean(axis=0, keepdims=True)
+        s = arr.std(axis=0, keepdims=True)
+        return (arr - m) / np.maximum(s, eps)
+    if mode == "recording_center":
+        return (arr - arr.mean(axis=0, keepdims=True)) / std
+    return (arr - mean) / std  

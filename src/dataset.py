@@ -27,10 +27,12 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         gloss_vocab: Vocabulary,
         word_vocab: Vocabulary,
         manifest_subdir: str,
+        norm_mode="recording",
     ) -> None:
         self.dataset_root = Path(dataset_root)
         self.gloss_vocab = gloss_vocab
         self.word_vocab = word_vocab
+        self.norm_mode = norm_mode
 
         manifest_path = self.dataset_root / "manifests" / manifest_subdir/ f"{split}.jsonl"
         if not manifest_path.is_file():
@@ -67,7 +69,9 @@ class ASLManifestDataset(torch.utils.data.Dataset):
             for row in reader:
                 rows.append([float(row[name]) for name in self.feature_columns])
         arr = np.asarray(rows, dtype=np.float32)
-        arr = (arr - self.feat_mean) / self.feat_std
+        # arr = (arr - self.feat_mean) / self.feat_std
+        from .normalization import normalize_recording
+        arr = normalize_recording(arr, self.norm_mode, self.feat_mean, self.feat_std)
         return arr
 
     def __getitem__(self, index: int) -> dict[str, Any]:

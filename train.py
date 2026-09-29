@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset_root", type=str, default=None, help="Override data.dataset_root")
     parser.add_argument("--epochs", type=int, default=None, help="Override train.epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override train.batch_size")
-    parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional"], help="Override data.split.mode")
+    parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional", "paper"], help="Override data.split.mode")
     parser.add_argument("--resume", action="store_true", help="Resume from last.pt in ckpt_dir")
     return parser.parse_args()
 
@@ -81,9 +81,9 @@ def main() -> None:
     word_pad_id = word_vocab.stoi["<pad>"]
     collate_fn = partial(collate_asl_batch, word_pad_id=word_pad_id)
 
-    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab, mode)
-    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab, mode)
-    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab, mode)
+    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
+    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
+    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
     
     train_loader = DataLoader(
         train_set,
