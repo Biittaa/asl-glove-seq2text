@@ -325,12 +325,12 @@ class SignLanguageTransformer(nn.Module):
         conv_kernel_size: int = 5,
         conv_stride: int = 2,
         conv_num_layers: int = 2,
-        two_hand=two_hand,
-        hand_feature_dim=hand_feature_dim,
-        hand_d_model=hand_d_model,
-        fusion=fusion,
-        fusion_nhead=fusion_nhead,
-        hand_encoder_layers=hand_encoder_layers,
+        two_hand: bool = False,
+        hand_feature_dim: int = 19,
+        hand_d_model: int = 128,
+        fusion: str = "concat",
+        fusion_nhead: int = 4,
+        hand_encoder_layers: int = 0,
     ) -> None:
         super().__init__()
         self.encoder = TransformerEncoderCTC(
@@ -346,6 +346,12 @@ class SignLanguageTransformer(nn.Module):
             conv_kernel_size=conv_kernel_size,
             conv_stride=conv_stride,
             conv_num_layers=conv_num_layers,
+            two_hand=two_hand,
+            hand_feature_dim=hand_feature_dim,
+            hand_d_model=hand_d_model,
+            fusion=fusion,
+            fusion_nhead=fusion_nhead,
+            hand_encoder_layers=hand_encoder_layers,
         )
         self.decoder = TransformerDecoderCE(
             word_vocab_size=word_vocab_size,
