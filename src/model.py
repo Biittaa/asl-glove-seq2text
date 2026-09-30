@@ -181,10 +181,33 @@ class TransformerEncoderCTC(nn.Module):
         fusion: str = "concat",
         fusion_nhead: int = 4,
         hand_encoder_layers: int = 0,
+        use_gnn: bool = False,
+        feature_columns: list[str] | None = None,
+        gnn_hidden: int = 32,
+        gnn_layers: int = 2,
+        gnn_adaptive: bool = True,
+        gnn_cross_hand: bool = True,
     ) -> None:
         super().__init__()
-        self.use_conv_subsampling = use_conv_subsampling or two_hand
+        # self.use_conv_subsampling = use_conv_subsampling or two_hand
+        # if two_hand:
+        #     self.subsample = HandFusionFrontEnd(
+        #         hand_feature_dim=hand_feature_dim,
+        #         hand_d_model=hand_d_model,
+        #         d_model=d_model,
+        #         fusion=fusion,
+        #         nhead=fusion_nhead,
+        #         kernel_size=conv_kernel_size,
+        #         stride=conv_stride,
+        #         num_layers=conv_num_layers,
+        #         dropout=dropout,
+        #         hand_layers=hand_encoder_layers,
+        #         max_len=max_len,
+        #     )
+        self.use_conv_subsampling = use_conv_subsampling or two_hand or use_gnn
         if two_hand:
+            # Separate hand branches + fusion; use_gnn swaps each branch's
+            # conv encoder for a per-hand GCN.
             self.subsample = HandFusionFrontEnd(
                 hand_feature_dim=hand_feature_dim,
                 hand_d_model=hand_d_model,
@@ -197,6 +220,25 @@ class TransformerEncoderCTC(nn.Module):
                 dropout=dropout,
                 hand_layers=hand_encoder_layers,
                 max_len=max_len,
+                hand_gnn=use_gnn,
+                feature_columns=feature_columns,
+                gnn_hidden=gnn_hidden,
+                gnn_layers=gnn_layers,
+                gnn_adaptive=gnn_adaptive,
+            )
+        elif use_gnn:
+            # Single joint graph over both hands (no per-hand fusion).
+            self.subsample = GraphFrontEnd(
+                feature_columns=feature_columns,
+                gnn_hidden=gnn_hidden,
+                gnn_layers=gnn_layers,
+                d_model=d_model,
+                kernel_size=conv_kernel_size,
+                stride=conv_stride,
+                num_layers=conv_num_layers,
+                dropout=dropout,
+                adaptive=gnn_adaptive,
+                cross_hand=gnn_cross_hand,
             )
         elif use_conv_subsampling:
             self.subsample = ConvSubsampling(
@@ -331,6 +373,12 @@ class SignLanguageTransformer(nn.Module):
         fusion: str = "concat",
         fusion_nhead: int = 4,
         hand_encoder_layers: int = 0,
+        use_gnn: bool = False,
+        feature_columns: list[str] | None = None,
+        gnn_hidden: int = 32,
+        gnn_layers: int = 2,
+        gnn_adaptive: bool = True,
+        gnn_cross_hand: bool = True,
     ) -> None:
         super().__init__()
         self.encoder = TransformerEncoderCTC(
@@ -352,6 +400,12 @@ class SignLanguageTransformer(nn.Module):
             fusion=fusion,
             fusion_nhead=fusion_nhead,
             hand_encoder_layers=hand_encoder_layers,
+            use_gnn=use_gnn,
+            feature_columns=feature_columns,
+            gnn_hidden=gnn_hidden,
+            gnn_layers=gnn_layers,
+            gnn_adaptive=gnn_adaptive,
+            gnn_cross_hand=gnn_cross_hand,
         )
         self.decoder = TransformerDecoderCE(
             word_vocab_size=word_vocab_size,
@@ -444,7 +498,8 @@ class SignLanguageTransformer(nn.Module):
 class HandFusionFrontEnd(nn.Module):
 
     def __init__(self, hand_feature_dim, hand_d_model, d_model, fusion,
-                 nhead, kernel_size, stride, num_layers, dropout, hand_layers=0, max_len=1024):
+                 nhead, kernel_size, stride, num_layers, dropout, hand_layers=0, max_len=1024, hand_gnn=False, feature_columns=None, gnn_hidden=32,
+                 gnn_layers=2, gnn_adaptive=True):
         super().__init__()
         if fusion not in ("concat", "cross_attention"):
             raise ValueError(f"Unknown fusion: {fusion}")
@@ -454,7 +509,18 @@ class HandFusionFrontEnd(nn.Module):
         def make():
             return ConvSubsampling(hand_feature_dim, hand_d_model,
                                    kernel_size, stride, num_layers, dropout)
-        self.right, self.left = make(), make()
+        # self.right, self.left = make(), make()
+        if hand_gnn:
+                # One GCN per hand, each over its own 11-node subgraph.
+            h = hand_feature_dim
+            def make_gnn(cols):
+                return GraphFrontEnd(cols, gnn_hidden, gnn_layers, hand_d_model,
+                                     kernel_size, stride, num_layers, dropout,
+                                     adaptive=gnn_adaptive, cross_hand=False)
+            self.right = make_gnn(feature_columns[:h])
+            self.left = make_gnn(feature_columns[h:])
+        else:
+            self.right, self.left = make(), make()
 
         if fusion == "cross_attention":
             self.attn_r = nn.MultiheadAttention(hand_d_model, nhead, dropout=dropout, batch_first=True)
@@ -488,3 +554,85 @@ class HandFusionFrontEnd(nn.Module):
             r, l = r + r2, l + l2          # residual
         x = self.out_norm(self.out_proj(torch.cat([r, l], dim=-1)))           # (B, T', d_model)
         return x, out_lengths, mask
+    
+    
+    
+class GraphFrontEnd(nn.Module):
+    """Per-frame GCN over sensor nodes, then temporal conv subsampling.
+
+    Nodes are derived from column names: "right_hand_thumb_1_rotation_y"
+    belongs to node "right_hand_thumb_1". Nodes have 1-3 features, so they
+    are zero-padded to a common width and masked.
+    """
+
+    BONES = [
+        ("arm", "forearm"), ("forearm", "hand"),
+        ("hand", "hand_thumb_1"), ("hand_thumb_1", "hand_thumb_2"),
+        ("hand_thumb_2", "hand_thumb_3"),
+        ("hand", "hand_index_1"), ("hand_index_1", "hand_index_2"),
+        ("hand", "hand_middle_1"), ("hand", "hand_ring_1"),
+        ("hand", "hand_pinky_1"),
+    ]
+
+    def __init__(self, feature_columns, gnn_hidden, gnn_layers, d_model,
+                 kernel_size, stride, num_layers, dropout,
+                 adaptive=True, cross_hand=True):
+        super().__init__()
+        if feature_columns is None:
+            raise ValueError("GraphFrontEnd requires feature_columns")
+
+        # Group feature columns by sensor (node).
+        node_names: list[str] = []
+        cols_of: dict[str, list[int]] = {}
+        for col_idx, col in enumerate(feature_columns):
+            node = col.rsplit("_rotation_", 1)[0]
+            if node not in cols_of:
+                node_names.append(node)
+                cols_of[node] = []
+            cols_of[node].append(col_idx)
+        n = len(node_names)
+        max_f = max(len(v) for v in cols_of.values())
+
+        index = torch.zeros(n, max_f, dtype=torch.long)
+        mask = torch.zeros(n, max_f)
+        for i, name in enumerate(node_names):
+            for j, c in enumerate(cols_of[name]):
+                index[i, j] = c
+                mask[i, j] = 1.0
+        self.register_buffer("node_index", index, persistent=False)
+        self.register_buffer("node_mask", mask, persistent=False)
+
+        # Skeleton adjacency with self-loops, symmetric normalization.
+        pos = {name: i for i, name in enumerate(node_names)}
+        adj = torch.eye(n)
+        for side in ("right", "left"):
+            for a, b in self.BONES:
+                ia, ib = pos.get(f"{side}_{a}"), pos.get(f"{side}_{b}")
+                if ia is not None and ib is not None:
+                    adj[ia, ib] = adj[ib, ia] = 1.0
+        if cross_hand and "right_hand" in pos and "left_hand" in pos:
+            r, l = pos["right_hand"], pos["left_hand"]
+            adj[r, l] = adj[l, r] = 1.0
+        d_inv_sqrt = adj.sum(1).rsqrt()
+        adj = d_inv_sqrt[:, None] * adj * d_inv_sqrt[None, :]
+        self.register_buffer("adj", adj, persistent=False)
+        self.adj_delta = nn.Parameter(torch.zeros(n, n)) if adaptive else None
+
+        dims = [max_f] + [gnn_hidden] * gnn_layers
+        self.gcn = nn.ModuleList(nn.Linear(dims[i], dims[i + 1]) for i in range(gnn_layers))
+        self.norms = nn.ModuleList(nn.LayerNorm(gnn_hidden) for _ in range(gnn_layers))
+        self.drop = nn.Dropout(dropout)
+        # Temporal part: flattened node features -> d_model, frame axis downsampled.
+        self.temporal = ConvSubsampling(n * gnn_hidden, d_model, kernel_size,
+                                        stride, num_layers, dropout)
+
+    def forward(self, features, frame_lengths):
+        # features: (B, T, F_in) -> per-node tensor (B, T, N, F)
+        x = features[..., self.node_index] * self.node_mask
+        a = self.adj if self.adj_delta is None else self.adj + self.adj_delta
+        for lin, norm in zip(self.gcn, self.norms):
+            h = torch.einsum("nm,btmf->btnf", a, x)       # aggregate neighbours
+            h = self.drop(torch.relu(norm(lin(h))))
+            x = h if x.size(-1) != h.size(-1) else x + h    # residual after 1st layer
+        b, t, n, f = x.shape
+        return self.temporal(x.reshape(b, t, n * f), frame_lengths)  # (x, lengths, mask)

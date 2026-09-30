@@ -13,7 +13,8 @@ data:
   # i.e. the folder that directly contains: data/, manifests/, metadata.json
   # Example (Colab, folder uploaded as-is to Drive, not as a zip):
   #   /content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset
-  dataset_root:  "/content/drive/MyDrive/ASL_model_ready_dataset_processed/asl_training_dataset"
+  dataset_root:  "D:/Desk/SignLanguageTranslation/ASL_model_ready_dataset_processed/asl_training_dataset"
+
 
   train_split: "train"
   val_split: "validation"
@@ -64,10 +65,10 @@ model:
   # Raw per-frame feature dimensionality (from metadata.json: feature_count)
   input_feature_dim: 38
 
-  d_model: 256
+  d_model: 128
   nhead: 4
   dim_feedforward: 1024
-  dropout: 0.2
+  dropout: 0.3
 
   encoder_layers: 4
   decoder_layers: 4
@@ -86,18 +87,24 @@ model:
   conv_stride: 2
   conv_num_layers: 2
 
-  two_hand: true           
+  two_hand: true          
   hand_feature_dim: 19      
   hand_d_model: 128       
-  fusion: "concat"         
+  fusion: "cross_attention"         
   fusion_nhead: 4 
   hand_encoder_layers: 0
+
+  use_gnn: true
+  gnn_hidden: 32
+  gnn_layers: 2
+  gnn_adaptive: true       # learnable residual on top of the skeleton adjacency
+  gnn_cross_hand: true     # only used when two_hand: false
 
 # ---------------------------------------------------------------------------
 # Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
 # ---------------------------------------------------------------------------
 loss:
-  lambda_ctc: 0.5
+  lambda_ctc: 0.7
   lambda_ce: 0.5
   label_smoothing: 0.1   # applied only to the cross-entropy (decoder) loss
 

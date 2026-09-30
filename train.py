@@ -135,6 +135,12 @@ def main() -> None:
         fusion=cfg["model"].get("fusion", "concat"),
         fusion_nhead=cfg["model"].get("fusion_nhead", 4),
         hand_encoder_layers=cfg["model"].get("hand_encoder_layers", 0),
+        use_gnn=cfg["model"].get("use_gnn", False),
+        feature_columns=train_set.feature_columns,
+        gnn_hidden=cfg["model"].get("gnn_hidden", 32),
+        gnn_layers=cfg["model"].get("gnn_layers", 2),
+        gnn_adaptive=cfg["model"].get("gnn_adaptive", True),
+        gnn_cross_hand=cfg["model"].get("gnn_cross_hand", True),
     ).to(device)
 
     criterion = JointCTCCrossEntropyLoss(
