@@ -9,7 +9,8 @@ from .losses import JointCTCCrossEntropyLoss
 from .metrics import ctc_greedy_decode_ids, sentence_accuracy, word_error_rate, word_level_accuracy
 from .model import SignLanguageTransformer
 from .vocab import Vocabulary
-
+import csv
+from pathlib import Path
 
 def move_batch_to_device(batch: dict, device: torch.device) -> dict:
     out = dict(batch)
@@ -168,3 +169,56 @@ def evaluate(
     # metrics["val_gloss_wer"] = word_error_rate(gloss_refs, gloss_hyps)
     # metrics["val_wer"] = word_error_rate(word_refs, word_hyps)
     # return metrics
+    
+    
+    
+@torch.no_grad()
+def dump_predictions(
+    model, loaders: dict, device, gloss_vocab, word_vocab, max_decode_len, out_path,
+) -> None:
+    model.eval()
+    bos_id = word_vocab.stoi["<bos>"]
+    eos_id = word_vocab.stoi["<eos>"]
+    blank_id = gloss_vocab.stoi["<blank>"]
+
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "split", "id",
+            "gloss_ref", "gloss_pred", "gloss_correct",
+            "sentence_ref", "sentence_pred", "sentence_correct",
+        ])
+        for split, loader in loaders.items():
+            for batch in loader:
+                batch = move_batch_to_device(batch, device)
+                out = model(
+                    batch["features"], batch["src_key_padding_mask"],
+                    batch["word_ids"], batch["frame_lengths"],
+                )
+                gloss_hyps = ctc_greedy_decode_ids(
+                    out["ctc_log_probs"], out["encoder_frame_lengths"], blank_id
+                )
+                generated = model.greedy_decode(
+                    batch["features"], batch["src_key_padding_mask"], bos_id, eos_id,
+                    max_decode_len, frame_lengths=batch["frame_lengths"],
+                )
+
+                offset = 0
+                for i, sample_id in enumerate(batch["ids"]):
+                    length = int(batch["gloss_lengths"][i].item())
+                    gloss_ref = gloss_vocab.decode(
+                        batch["gloss_targets_concat"][offset: offset + length].tolist()
+                    )
+                    offset += length
+                    gloss_pred = gloss_vocab.decode(gloss_hyps[i])
+
+                    sent_ref = word_vocab.decode(batch["word_ids"][i].tolist()[1:], stop_at_eos=True)
+                    sent_pred = word_vocab.decode(generated[i].tolist()[1:], stop_at_eos=True)
+
+                    writer.writerow([
+                        split, sample_id,
+                        " ".join(gloss_ref), " ".join(gloss_pred), int(gloss_ref == gloss_pred),
+                        " ".join(sent_ref), " ".join(sent_pred), int(sent_ref == sent_pred),
+                    ])

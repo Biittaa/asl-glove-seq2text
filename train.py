@@ -21,7 +21,7 @@ import yaml
 from torch.utils.data import DataLoader
 
 from src.dataset import ASLManifestDataset, collate_asl_batch
-from src.engine import evaluate, train_one_epoch
+from src.engine import evaluate, train_one_epoch, dump_predictions
 from src.losses import JointCTCCrossEntropyLoss
 from src.model import SignLanguageTransformer
 from src.utils import WarmupInverseSqrtLR, load_checkpoint, resolve_device, save_checkpoint, set_seed
@@ -111,6 +111,16 @@ def main() -> None:
         pin_memory=cfg["data"]["pin_memory"],
         collate_fn=collate_fn,
     )
+    
+    train_eval_loader = DataLoader(
+        train_set,
+        batch_size=cfg["train"]["batch_size"],
+        shuffle=False,
+        num_workers=cfg["data"]["num_workers"],
+        pin_memory=cfg["data"]["pin_memory"],
+        collate_fn=collate_fn,
+        drop_last=False,
+    )
 
     model = SignLanguageTransformer(
         input_feature_dim=cfg["model"]["input_feature_dim"],
@@ -182,6 +192,12 @@ def main() -> None:
             cfg["train"]["grad_clip_norm"], scaler, cfg["train"]["log_every"], epoch,
         )
         print(f"[epoch {epoch}] train: {train_metrics}")
+        if epoch % cfg["train"].get("eval_train_every_epochs", 1) == 0:
+            train_eval_metrics = evaluate(
+                model, train_eval_loader, criterion, device, gloss_vocab, word_vocab,
+                cfg["model"]["max_decoder_len"], split="train",
+            )
+            print(f"[epoch {epoch}] train-eval: {train_eval_metrics}")
 
         if epoch % cfg["train"]["eval_every_epochs"] == 0:
             val_metrics = evaluate(
@@ -229,6 +245,14 @@ def main() -> None:
     print("[info] ===== FINAL TEST RESULTS (best checkpoint) =====")
     for key, value in final_test_metrics.items():
         print(f"[final test] {key}: {value:.4f}")
+        
+    pred_path = Path(cfg["train"].get("predictions_dir", "artifacts/predictions")) / mode / "predictions.csv"
+    dump_predictions(
+        model,
+        {"train": train_eval_loader, "validation": val_loader, "test": test_loader},
+        device, gloss_vocab, word_vocab, cfg["model"]["max_decoder_len"], pred_path,
+    )
+    print(f"[info] predictions written to {pred_path}")
 
 
 if __name__ == "__main__":

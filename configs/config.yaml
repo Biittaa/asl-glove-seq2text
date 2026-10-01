@@ -67,11 +67,11 @@ model:
 
   d_model: 128
   nhead: 4
-  dim_feedforward: 1024
+  dim_feedforward: 512
   dropout: 0.3
 
-  encoder_layers: 4
-  decoder_layers: 4
+  encoder_layers: 3
+  decoder_layers: 2
 
   max_encoder_len: 1024     # >= dataset "maximum_frames" (831), with margin
   max_decoder_len: 64       # >= longest word_order sentence + <bos>/<eos>
@@ -94,7 +94,7 @@ model:
   fusion_nhead: 4 
   hand_encoder_layers: 0
 
-  use_gnn: true
+  use_gnn: false
   gnn_hidden: 32
   gnn_layers: 2
   gnn_adaptive: true       # learnable residual on top of the skeleton adjacency
@@ -105,7 +105,7 @@ model:
 # ---------------------------------------------------------------------------
 loss:
   lambda_ctc: 0.7
-  lambda_ce: 0.5
+  lambda_ce: 0.3
   label_smoothing: 0.1   # applied only to the cross-entropy (decoder) loss
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,8 @@ train:
   ckpt_dir: "artifacts/checkpoints"
   best_metric: "val_wer"    # lower is better; tracked on the decoder output
   early_stop_patience: 15   # epochs without improvement, 0 = disabled
-
+  eval_train_every_epochs: 1
+  predictions_dir: "artifacts/predictions"
 # ---------------------------------------------------------------------------
 # Misc
 # ---------------------------------------------------------------------------
