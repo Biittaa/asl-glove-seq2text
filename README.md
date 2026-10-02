@@ -54,7 +54,7 @@ python scripts/build_splits.py --config configs/config.yaml --split <mode>
 |------|---------------|
 | `subject` | Subject-disjoint split taken from the `split` field in `all.jsonl` (subject1 -> train, subject2 -> validation, subject3 -> test). Generalization to an **unseen signer**. |
 | `random` | Random split over all pooled recordings, stratified by `sentence_id`. Generalization to a **new recording of a known sentence**. |
-| `compositional` | Whole sentences are held out of train and used as test. Generalization to **unseen sentences** made of known words. Held-out sentences are chosen so that no word/gloss disappears from the training vocabulary. |
+| `compositional` | A set of sentences (default 15%) is held out entirely: ALL recordings of those sentences go to test and none appear in train. Tests generalization to **sentences never seen in training**, built from words that do appear in other training sentences. Sentences are only held out if no word/gloss would be missing from the training vocabulary. |
 | `compositional_s1` | Same as `compositional`, but uses only the recordings of `subject1`. |
 | `paper` | Paper-style user-independent split: train on all other subjects, validation/test come from one held-out subject (`data.split.paper.held_out_subject`). |
 
