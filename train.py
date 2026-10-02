@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset_root", type=str, default=None, help="Override data.dataset_root")
     parser.add_argument("--epochs", type=int, default=None, help="Override train.epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override train.batch_size")
-    parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional", "paper"], help="Override data.split.mode")
+    parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional", "compositional_s1", "paper"], help="Override data.split.mode")
     parser.add_argument("--resume", action="store_true", help="Resume from last.pt in ckpt_dir")
     return parser.parse_args()
 

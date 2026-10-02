@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--split",
         type=str,
-        choices=["subject", "random", "compositional", "paper"],
+        choices=["subject", "random", "compositional", "paper", "compositional_s1"],
         default=None,
         help="Override data.split from the config file.",
     )
@@ -198,6 +198,7 @@ def build_compositional_split(
     unseen_sentence_fraction: float,
     train_recording_ratio: float,
     seed: int,
+    subjects: list[str] | None = None,
 ) -> dict[str, list[dict]]:
     """Hold whole sentences out of train to test generalization to unseen
     sentences built from already-seen words/glosses.
@@ -213,6 +214,11 @@ def build_compositional_split(
             half of the split is the same idea as build_random_split, just
             restricted to the "safe" sentence pool.
     """
+    
+    if subjects:
+        records = [r for r in records if r["subject"] in subjects]
+        if not records:
+            raise ValueError(f"No records found for subjects {subjects}")
     rng = random.Random(seed)
 
     by_sentence: dict[int, list[dict]] = defaultdict(list)
@@ -338,6 +344,17 @@ def main() -> None:
             seed=seed,
         )
         print("[info] using COMPOSITIONAL split (test = entirely unseen sentences built from known words)")
+    elif split_mode == "compositional_s1":
+        c = split_cfg.get("compositional_s1", {})
+        splits = build_compositional_split(
+            records,
+            unseen_sentence_fraction=c.get("unseen_sentence_fraction", 0.15),
+            train_recording_ratio=c.get("train_recording_ratio", 0.85),
+            seed=c.get("seed", split_cfg.get("random_seed", 42)),
+            subjects=c.get("subjects", ["subject1"]),
+        )
+        print("[info] using COMPOSITIONAL-S1 split (subject1 only, unseen sentences in test)")
+    
     elif split_mode == "paper":
         p_cfg = split_cfg.get("paper", {})
         splits = build_paper_split(

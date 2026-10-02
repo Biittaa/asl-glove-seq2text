@@ -31,6 +31,7 @@ data:
       unseen_sentence_fraction: 0.15  
       train_recording_ratio: 0.85   
       seed: 42
+      subjects: ["subject1"]
     paper:
       held_out_subject: "subject2"
       val_fraction: 0.5
@@ -70,8 +71,8 @@ model:
   dim_feedforward: 512
   dropout: 0.3
 
-  encoder_layers: 3
-  decoder_layers: 2
+  encoder_layers: 4
+  decoder_layers: 4
 
   max_encoder_len: 1024     # >= dataset "maximum_frames" (831), with margin
   max_decoder_len: 64       # >= longest word_order sentence + <bos>/<eos>
@@ -97,15 +98,15 @@ model:
   use_gnn: false
   gnn_hidden: 32
   gnn_layers: 2
-  gnn_adaptive: true       # learnable residual on top of the skeleton adjacency
-  gnn_cross_hand: true     # only used when two_hand: false
+  gnn_adaptive: false      # learnable residual on top of the skeleton adjacency
+  gnn_cross_hand: false     # only used when two_hand: false
 
 # ---------------------------------------------------------------------------
 # Loss weights (Eq. 32 in the reference paper: L = lambda_ctc * L_ctc + lambda_ce * L_ce)
 # ---------------------------------------------------------------------------
 loss:
-  lambda_ctc: 0.7
-  lambda_ce: 0.3
+  lambda_ctc: 0.5
+  lambda_ce: 0.5
   label_smoothing: 0.1   # applied only to the cross-entropy (decoder) loss
 
 # ---------------------------------------------------------------------------
