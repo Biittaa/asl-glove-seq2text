@@ -39,13 +39,51 @@ def load_stats(path: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return np.array(d["mean"], dtype=np.float32), np.array(d["std"], dtype=np.float32)
 
 
+def fuzzy_encode(x: np.ndarray, n_levels: int = 7, clip: float = 3.0) -> np.ndarray:
+    """Fuzzy encoding: snap a normalized signal onto a few discrete levels.
+
+    Idea borrowed from Wei et al. (InfoMat 2024): after normalization the
+    signal is converted to a small number of equally spaced magnitude levels,
+    so the waveform SHAPE is kept while small amplitude differences between
+    signers / repetitions are removed.
+
+    x       : already normalized array (e.g. per-recording z-score), any shape.
+    n_levels: number of discrete levels (the paper uses 6 for strain sensors).
+              An odd value keeps an exact 0 level.
+    clip    : values outside [-clip, clip] are saturated before quantization.
+
+    Returns an array in [-1, 1] that takes only `n_levels` distinct values.
+    """
+    if n_levels < 2:
+        return x.astype(np.float32)
+    x = np.clip(x, -clip, clip) / clip               # -> [-1, 1]
+    u = (x + 1.0) / 2.0                              # -> [0, 1]
+    q = np.round(u * (n_levels - 1)) / (n_levels - 1)  # snap to equally spaced levels
+    return (q * 2.0 - 1.0).astype(np.float32)        # -> [-1, 1]
 
 
-def normalize_recording(arr: np.ndarray, mode: str, mean=None, std=None, eps: float = 1e-3) -> np.ndarray:
+def normalize_recording(
+    arr: np.ndarray,
+    mode: str,
+    mean=None,
+    std=None,
+    eps: float = 1e-3,
+    fuzzy_levels: int = 0,
+    fuzzy_clip: float = 3.0,
+) -> np.ndarray:
+    """Normalize one recording, then optionally apply fuzzy encoding.
+
+    fuzzy_levels <= 1 disables fuzzy encoding (old behaviour).
+    """
     if mode == "recording":
         m = arr.mean(axis=0, keepdims=True)
         s = arr.std(axis=0, keepdims=True)
-        return (arr - m) / np.maximum(s, eps)
-    if mode == "recording_center":
-        return (arr - arr.mean(axis=0, keepdims=True)) / std
-    return (arr - mean) / std  
+        out = (arr - m) / np.maximum(s, eps)
+    elif mode == "recording_center":
+        out = (arr - arr.mean(axis=0, keepdims=True)) / std
+    else:
+        out = (arr - mean) / std
+
+    if fuzzy_levels and fuzzy_levels > 1:
+        out = fuzzy_encode(out, fuzzy_levels, fuzzy_clip)
+    return out

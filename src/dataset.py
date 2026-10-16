@@ -1,5 +1,8 @@
 """Dataset for the ASL Perception Neuron sensor-to-text package.
-...
+
+Reads one manifest split (train/validation/test) and the CSV sequences it
+points to, normalizes every recording (optionally with fuzzy encoding) and
+returns features plus the two label sequences (gloss order / spoken order).
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import numpy as np
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
-from .normalization import compute_feature_stats, load_stats, save_stats
+from .normalization import compute_feature_stats, load_stats, normalize_recording, save_stats
 from .vocab import BOS_TOKEN, EOS_TOKEN, PAD_TOKEN, Vocabulary
 
 
@@ -28,13 +31,19 @@ class ASLManifestDataset(torch.utils.data.Dataset):
         word_vocab: Vocabulary,
         manifest_subdir: str,
         norm_mode="recording",
+        fuzzy_cfg: dict | None = None,
     ) -> None:
         self.dataset_root = Path(dataset_root)
         self.gloss_vocab = gloss_vocab
         self.word_vocab = word_vocab
         self.norm_mode = norm_mode
 
-        manifest_path = self.dataset_root / "manifests" / manifest_subdir/ f"{split}.jsonl"
+        # Fuzzy encoding settings (disabled when fuzzy_cfg is None or enabled=False).
+        fuzzy_cfg = fuzzy_cfg or {}
+        self.fuzzy_levels = int(fuzzy_cfg.get("levels", 0)) if fuzzy_cfg.get("enabled", False) else 0
+        self.fuzzy_clip = float(fuzzy_cfg.get("clip", 3.0))
+
+        manifest_path = self.dataset_root / "manifests" / manifest_subdir / f"{split}.jsonl"
         if not manifest_path.is_file():
             raise FileNotFoundError(f"Manifest not found: {manifest_path}")
         with open(manifest_path, "r", encoding="utf-8") as f:
@@ -69,9 +78,10 @@ class ASLManifestDataset(torch.utils.data.Dataset):
             for row in reader:
                 rows.append([float(row[name]) for name in self.feature_columns])
         arr = np.asarray(rows, dtype=np.float32)
-        # arr = (arr - self.feat_mean) / self.feat_std
-        from .normalization import normalize_recording
-        arr = normalize_recording(arr, self.norm_mode, self.feat_mean, self.feat_std)
+        arr = normalize_recording(
+            arr, self.norm_mode, self.feat_mean, self.feat_std,
+            fuzzy_levels=self.fuzzy_levels, fuzzy_clip=self.fuzzy_clip,
+        )
         return arr
 
     def __getitem__(self, index: int) -> dict[str, Any]:

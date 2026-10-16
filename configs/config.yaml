@@ -48,6 +48,19 @@ data:
 
   norm_mode: "recording"
 
+  # Fuzzy encoding (idea from Wei et al., InfoMat 2024), applied AFTER norm_mode:
+  # the normalized signal is clipped to [-clip, clip] and snapped to `levels`
+  # equally spaced values in [-1, 1]. This keeps the waveform shape but removes
+  # small amplitude differences between signers / repetitions.
+  #   enabled: false -> old behaviour (continuous features)
+  #   levels : number of discrete levels (odd value keeps an exact 0 level)
+  #   clip   : saturation threshold in standard deviations
+  # CLI overrides: --fuzzy 1 --fuzzy_levels 7
+  fuzzy:
+    enabled: false
+    levels: 7
+    clip: 3.0
+
 # ---------------------------------------------------------------------------
 # Vocabulary
 # ---------------------------------------------------------------------------

@@ -6,8 +6,7 @@ Usage (from the repo root, e.g. inside the cloned GitHub repo on Colab):
     python train.py --config configs/config.yaml
     python train.py --config configs/config.yaml --dataset_root /content/drive/MyDrive/.../asl_training_dataset
 
-Any dotted CLI override (e.g. --train.batch_size 32) takes precedence over
-the YAML config, so you don't have to edit the file for quick experiments.
+Command-line arguments override the matching values in the YAML config.
 """
 
 from __future__ import annotations
@@ -38,6 +37,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None, help="Override train.epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override train.batch_size")
     parser.add_argument("--split_mode", type=str, default=None, choices=["subject", "random", "compositional", "compositional_s1", "paper"], help="Override data.split.mode")
+    parser.add_argument("--fuzzy", type=int, default=None, choices=[0, 1], help="Override data.fuzzy.enabled (1 = on, 0 = off)")
+    parser.add_argument("--fuzzy_levels", type=int, default=None, help="Override data.fuzzy.levels")
     parser.add_argument("--resume", action="store_true", help="Resume from last.pt in ckpt_dir")
     return parser.parse_args()
 
@@ -53,6 +54,12 @@ def load_config(path: str, args: argparse.Namespace) -> dict:
         cfg["train"]["batch_size"] = args.batch_size
     if args.split_mode:
         cfg["data"]["split"]["mode"] = args.split_mode
+    # Fuzzy encoding overrides (the "fuzzy" block is optional in the YAML).
+    cfg["data"].setdefault("fuzzy", {"enabled": False, "levels": 7, "clip": 3.0})
+    if args.fuzzy is not None:
+        cfg["data"]["fuzzy"]["enabled"] = bool(args.fuzzy)
+    if args.fuzzy_levels is not None:
+        cfg["data"]["fuzzy"]["levels"] = args.fuzzy_levels
     mode = cfg["data"]["split"]["mode"]
     cfg["vocab"]["out_dir"] = f"{cfg['vocab']['out_dir']}/{mode}"
     cfg["train"]["ckpt_dir"] = f"{cfg['train']['ckpt_dir']}/{mode}"
@@ -68,6 +75,8 @@ def main() -> None:
 
     dataset_root = cfg["data"]["dataset_root"]
     mode = cfg["data"]["split"]["mode"]
+    fuzzy_cfg = cfg["data"]["fuzzy"]
+    print(f"[info] fuzzy encoding: {fuzzy_cfg}")
     gloss_vocab, word_vocab = build_or_load_vocabs(
         dataset_root=dataset_root,
         train_split=f"{mode}/{cfg['data']['train_split']}",
@@ -81,9 +90,9 @@ def main() -> None:
     word_pad_id = word_vocab.stoi["<pad>"]
     collate_fn = partial(collate_asl_batch, word_pad_id=word_pad_id)
 
-    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
-    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
-    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"])
+    train_set = ASLManifestDataset(dataset_root, cfg["data"]["train_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"], fuzzy_cfg=fuzzy_cfg)
+    val_set = ASLManifestDataset(dataset_root, cfg["data"]["val_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"], fuzzy_cfg=fuzzy_cfg)
+    test_set = ASLManifestDataset(dataset_root, cfg["data"]["test_split"], gloss_vocab, word_vocab, mode, cfg["data"]["norm_mode"], fuzzy_cfg=fuzzy_cfg)
     
     train_loader = DataLoader(
         train_set,
